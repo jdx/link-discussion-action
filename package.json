@@ -1,0 +1,21 @@
+{
+  "name": "link-discussion-action",
+  "version": "0.1.0",
+  "description": "Link a merged pull request to GitHub Discussions by commenting and closing referenced discussions.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,17 @@
+name: 'Link Discussion'
+description: 'Link a merged pull request to GitHub Discussions — comment on and optionally close discussions referenced with closing keywords.'
+author: 'gaojunran'
+
+branding:
+  icon: 'link'
+  color: 'purple'
+
+inputs:
+  github-token:
+    description: 'GitHub token with discussions:write permission. Defaults to the automatic GITHUB_TOKEN.'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
