@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { prTargets, stableReleasesAfter, stripNoise } from '../src/release'
+import { issueAlreadyCommented, prTargets, releasePrs, stableReleasesAfter, stripNoise } from '../src/release'
 
 describe('release notification discovery', () => {
   it('ignores template and code examples and pages closing references', async () => {
@@ -29,5 +29,23 @@ describe('release notification discovery', () => {
 
   it('removes HTML comments and fenced code before closing-reference parsing', () => {
     expect(stripNoise('<!-- Fixes #1 -->\n```\nFixes #2\n```\nFixes #3')).toBe('\n\nFixes #3')
+  })
+
+  it('pages release commits and deduplicates squash PR subjects', async () => {
+    const commits = Array.from({ length: 100 }, (_, i) => ({ commit: { message: `change (#${i + 1})` } }))
+    const compareCommits = vi.fn()
+      .mockResolvedValueOnce({ data: { commits } })
+      .mockResolvedValueOnce({ data: { commits: [{ commit: { message: 'follow up (#100)' } }, { commit: { message: 'not a PR' } }] } })
+    await expect(releasePrs({ rest: { repos: { compareCommits } } } as any, 'jdx', 'tool', 'v1', 'v2')).resolves.toHaveLength(100)
+    expect(compareCommits).toHaveBeenCalledTimes(2)
+  })
+
+  it('recognizes only an Actions-owned marker across paginated issue comments', async () => {
+    const comments = Array.from({ length: 100 }, () => ({ user: { login: 'someone' }, body: '<!-- fixed-in:v2 -->' }))
+    const listComments = vi.fn()
+      .mockResolvedValueOnce({ data: comments })
+      .mockResolvedValueOnce({ data: [{ user: { login: 'github-actions[bot]' }, body: '<!-- fixed-in:v2 -->' }] })
+    await expect(issueAlreadyCommented({ rest: { issues: { listComments } } } as any, 'jdx', 'tool', 1, '<!-- fixed-in:v2 -->')).resolves.toBe(true)
+    expect(listComments).toHaveBeenCalledTimes(2)
   })
 })

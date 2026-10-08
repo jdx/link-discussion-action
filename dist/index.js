@@ -31932,12 +31932,18 @@ async function previousRelease(octokit, owner, repo, tag) {
     return best.tag;
 }
 async function releasePrs(octokit, owner, repo, base, tag) {
-    const { data } = await octokit.rest.repos.compareCommits({ owner, repo, base, head: tag, per_page: 250 });
     const prs = new Set();
-    for (const commit of data.commits) {
-        const match = SQUASH_PR.exec(commit.commit.message.split('\n', 1)[0]);
-        if (match)
-            prs.add(Number(match[1]));
+    // A large release can span pages. Do not silently omit fixes beyond the first
+    // comparison page: a later manual retry cannot infer the missing PRs.
+    for (let page = 1;; page += 1) {
+        const { data } = await octokit.rest.repos.compareCommits({ owner, repo, base, head: tag, per_page: 100, page });
+        for (const commit of data.commits) {
+            const match = SQUASH_PR.exec(commit.commit.message.split('\n', 1)[0]);
+            if (match)
+                prs.add(Number(match[1]));
+        }
+        if (data.commits.length < 100)
+            break;
     }
     return [...prs];
 }
@@ -31989,7 +31995,7 @@ async function commentDiscussion(octokit, owner, repo, number, tag, pr, prefix, 
         core.info(`skip discussion #${number}: already commented for ${tag}`);
         return 'skipped';
     }
-    const body = `${mark}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}`;
+    const body = releaseComment(tag, pr, prefix, upgradeText, owner, repo);
     if (dryRun) {
         core.info(`[dry run] would comment on discussion #${number} (from #${pr})`);
         return 'commented';
@@ -31997,6 +32003,18 @@ async function commentDiscussion(octokit, owner, repo, number, tag, pr, prefix, 
     await octokit.graphql(ADD_DISCUSSION_COMMENT, { id: item.id, body });
     core.info(`commented on discussion #${number} (from #${pr})`);
     return 'commented';
+}
+function releaseComment(tag, pr, prefix, upgradeText, owner, repo) {
+    return `${marker(prefix, tag)}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}`;
+}
+async function issueAlreadyCommented(octokit, owner, repo, number, mark) {
+    for (let page = 1;; page += 1) {
+        const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: number, per_page: 100, page });
+        if (data.some((comment) => BOT_LOGINS.has(comment.user?.login) && comment.body?.includes(mark)))
+            return true;
+        if (data.length < 100)
+            return false;
+    }
 }
 async function runRelease({ octokit, owner, repo }) {
     const tag = core.getInput('tag', { required: true });
@@ -32015,10 +32033,13 @@ async function runRelease({ octokit, owner, repo }) {
             const targets = await prTargets(octokit, owner, repo, pr);
             for (const issue of targets.issues) {
                 try {
-                    if (dryRun)
+                    if (await issueAlreadyCommented(octokit, owner, repo, issue, marker(prefix, tag))) {
+                        core.info(`skip issue #${issue}: already commented for ${tag}`);
+                    }
+                    else if (dryRun)
                         core.info(`[dry run] would comment on issue #${issue} (from #${pr})`);
                     else
-                        await octokit.rest.issues.createComment({ owner, repo, issue_number: issue, body: `${marker(prefix, tag)}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}` });
+                        await octokit.rest.issues.createComment({ owner, repo, issue_number: issue, body: releaseComment(tag, pr, prefix, upgradeText, owner, repo) });
                 }
                 catch (err) {
                     failures.push(`issue #${issue} from #${pr}: ${err.message || err}`);

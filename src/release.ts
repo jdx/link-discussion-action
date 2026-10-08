@@ -56,12 +56,17 @@ export async function previousRelease(octokit: Octokit, owner: string, repo: str
   return best.tag
 }
 
-async function releasePrs(octokit: Octokit, owner: string, repo: string, base: string, tag: string): Promise<number[]> {
-  const { data } = await octokit.rest.repos.compareCommits({ owner, repo, base, head: tag, per_page: 250 })
+export async function releasePrs(octokit: Octokit, owner: string, repo: string, base: string, tag: string): Promise<number[]> {
   const prs = new Set<number>()
-  for (const commit of data.commits) {
-    const match = SQUASH_PR.exec(commit.commit.message.split('\n', 1)[0])
-    if (match) prs.add(Number(match[1]))
+  // A large release can span pages. Do not silently omit fixes beyond the first
+  // comparison page: a later manual retry cannot infer the missing PRs.
+  for (let page = 1; ; page += 1) {
+    const { data } = await octokit.rest.repos.compareCommits({ owner, repo, base, head: tag, per_page: 100, page })
+    for (const commit of data.commits) {
+      const match = SQUASH_PR.exec(commit.commit.message.split('\n', 1)[0])
+      if (match) prs.add(Number(match[1]))
+    }
+    if (data.commits.length < 100) break
   }
   return [...prs]
 }
@@ -107,11 +112,23 @@ async function commentDiscussion(octokit: Octokit, owner: string, repo: string, 
   if (item.comments.some((comment: any) => BOT_LOGINS.has(comment.author?.login) && comment.body?.includes(mark))) {
     core.info(`skip discussion #${number}: already commented for ${tag}`); return 'skipped'
   }
-  const body = `${mark}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}`
+  const body = releaseComment(tag, pr, prefix, upgradeText, owner, repo)
   if (dryRun) { core.info(`[dry run] would comment on discussion #${number} (from #${pr})`); return 'commented' }
   await octokit.graphql(ADD_DISCUSSION_COMMENT, { id: item.id, body })
   core.info(`commented on discussion #${number} (from #${pr})`)
   return 'commented'
+}
+
+function releaseComment(tag: string, pr: number, prefix: string, upgradeText: string, owner: string, repo: string): string {
+  return `${marker(prefix, tag)}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}`
+}
+
+export async function issueAlreadyCommented(octokit: Octokit, owner: string, repo: string, number: number, mark: string): Promise<boolean> {
+  for (let page = 1; ; page += 1) {
+    const { data } = await octokit.rest.issues.listComments({ owner, repo, issue_number: number, per_page: 100, page })
+    if (data.some((comment: any) => BOT_LOGINS.has(comment.user?.login) && comment.body?.includes(mark))) return true
+    if (data.length < 100) return false
+  }
 }
 
 export async function runRelease({ octokit, owner, repo }: { octokit: Octokit; owner: string; repo: string }): Promise<void> {
@@ -130,8 +147,10 @@ export async function runRelease({ octokit, owner, repo }: { octokit: Octokit; o
       const targets = await prTargets(octokit, owner, repo, pr)
       for (const issue of targets.issues) {
         try {
-          if (dryRun) core.info(`[dry run] would comment on issue #${issue} (from #${pr})`)
-          else await octokit.rest.issues.createComment({ owner, repo, issue_number: issue, body: `${marker(prefix, tag)}\nFixed in [${tag}](https://github.com/${owner}/${repo}/releases/tag/${tag}) by #${pr}.${upgradeText ? ` ${upgradeText}` : ''}` })
+          if (await issueAlreadyCommented(octokit, owner, repo, issue, marker(prefix, tag))) {
+            core.info(`skip issue #${issue}: already commented for ${tag}`)
+          } else if (dryRun) core.info(`[dry run] would comment on issue #${issue} (from #${pr})`)
+          else await octokit.rest.issues.createComment({ owner, repo, issue_number: issue, body: releaseComment(tag, pr, prefix, upgradeText, owner, repo) })
         } catch (err: any) { failures.push(`issue #${issue} from #${pr}: ${err.message || err}`) }
       }
       for (const number of targets.discussions) {
