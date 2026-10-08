@@ -7,10 +7,32 @@ branding:
   color: 'purple'
 
 inputs:
+  mode:
+    description: 'link (default) handles a merged PR; release comments on items fixed in a published release.'
+    required: false
+    default: link
   github-token:
     description: 'GitHub token with discussions:write permission. Defaults to the automatic GITHUB_TOKEN.'
     required: true
     default: ${{ github.token }}
+  tag:
+    description: 'Published release tag. Required when mode is release.'
+    required: false
+  tag-pattern:
+    description: 'Regular expression that release tags must match.'
+    required: false
+    default: '^v[0-9][0-9A-Za-z._+-]*$'
+  marker-prefix:
+    description: 'HTML comment prefix used to deduplicate release comments.'
+    required: false
+    default: 'fixed-in'
+  upgrade-text:
+    description: 'Optional repository-specific upgrade guidance appended to release comments.'
+    required: false
+  dry-run:
+    description: 'Print intended release comments without posting them.'
+    required: false
+    default: 'false'
 
 runs:
   using: 'node20'

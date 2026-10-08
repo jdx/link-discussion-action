@@ -72,6 +72,35 @@ GitHub issues, pull requests, and discussions share a single number space within
 | Name | Description | Default |
 |------|-------------|---------|
 | `github-token` | Token with `discussions:write` permission | `${{ github.token }}` |
+| `mode` | `link` for merged PRs, or `release` for shipped-fix comments | `link` |
+| `tag` | Published release tag (required in `release` mode) | — |
+| `tag-pattern` | Regex guard for this repository's release family | `^v[0-9][0-9A-Za-z._+-]*$` |
+| `marker-prefix` | Repository-specific idempotency marker | `fixed-in` |
+| `upgrade-text` | Optional upgrade guidance appended to comments | — |
+| `dry-run` | Print intended release comments without posting | `false` |
+
+## Release notification mode
+
+Run this after a release is actually published (or invoke it from the publishing
+workflow when that release used `GITHUB_TOKEN`, because that token does not
+trigger a downstream `release` workflow). It finds merged squash PRs between the
+nearest contained stable release and `tag`, then comments only on same-repository
+closed issues and discussions explicitly named by a closing keyword. It never
+closes, reopens, or comments on an open discussion.
+
+```yaml
+- uses: jdx/link-discussion-action@<reviewed-sha>
+  with:
+    mode: release
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    tag: ${{ github.ref_name }}
+    marker-prefix: hk-fixed-in
+    upgrade-text: Update with `mise use hk@latest`.
+```
+
+Use a repository-specific `tag-pattern` for workspace or multi-package releases.
+The marker makes retries safe. A run fails with an itemized summary if any
+individual read or comment fails, so a manual rerun can recover safely.
 
 ## Permissions
 

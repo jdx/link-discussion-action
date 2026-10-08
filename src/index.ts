@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import { parseDiscussionRefs } from './parse'
+import { runRelease } from './release'
 
 const GET_DISCUSSION = /* GraphQL */ `
   query($owner: String!, $repo: String!, $number: Int!) {
@@ -47,6 +48,16 @@ interface GetDiscussionResult {
 async function run(): Promise<void> {
   const token = core.getInput('github-token', { required: true })
   const octokit = github.getOctokit(token)
+  const mode = core.getInput('mode') || 'link'
+
+  if (mode === 'release') {
+    await runRelease({ octokit, owner: github.context.repo.owner, repo: github.context.repo.repo })
+    return
+  }
+  if (mode !== 'link') {
+    core.setFailed(`Unsupported mode: ${mode}`)
+    return
+  }
 
   const { owner, repo } = github.context.repo
   const pr = github.context.payload.pull_request
