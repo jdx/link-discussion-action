@@ -48,6 +48,10 @@ All GitHub-native linking keywords work. If the referenced number is a **discuss
 
 The optional `discussion` prefix (`closes discussion #42`) is accepted but not required — the Action checks whether the number refers to a discussion at runtime via the GraphQL API.
 
+A colon after the keyword (`Fixes: #42`) is accepted, and the number can also be written as a full URL to this repository (`Fixes https://github.com/OWNER/REPO/discussions/42`). URLs that point at a different repository are ignored.
+
+References inside HTML comments, fenced code blocks (```` ``` ```` or `~~~`), inline code, indented code, and `>` block quotes are ignored, so examples and quoted text never close a discussion. This matches the parsing of the release-comment workflow in [`jdx/workflows`](https://github.com/jdx/workflows), so a discussion this Action closes is the same one that later gets a "Fixed in vX" comment.
+
 ### Example PR body
 
 ```markdown
@@ -79,7 +83,7 @@ The workflow must declare `discussions: write` (and `pull-requests: read`). The 
 
 ## Limitations
 
-- Only references within the same repository are supported (`#42`, not `owner/repo#42`).
+- Only references within the same repository are supported (`#42` or a full URL to this repository, not `owner/repo#42`).
 - A discussion is only closed if it is still open; already-closed discussions get the comment but no duplicate close.
 - If a referenced number is an issue or PR (not a discussion), it is skipped — GitHub's native `closes #N` handles issues.
 

@@ -62,7 +62,7 @@ async function run(): Promise<void> {
   }
 
   const body = (pr.body as string | null) ?? ''
-  const refs = parseDiscussionRefs(body)
+  const refs = parseDiscussionRefs(body, { owner, repo })
 
   if (refs.length === 0) {
     core.info('No discussion references found in PR body.')
